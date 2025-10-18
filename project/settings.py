@@ -44,6 +44,8 @@ INSTALLED_APPS = [
     'candidates',
     'employers',
     'analytics',
+
+    'django_filters',
 ]
 
 # ---------------------------------------------------------------------

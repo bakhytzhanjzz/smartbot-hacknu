@@ -1,37 +1,64 @@
 # candidates/serializers.py
 from rest_framework import serializers
 from .models import Candidate, Application, BotMessage
-from jobs.models import Vacancy
 
 class CandidateSerializer(serializers.ModelSerializer):
     class Meta:
         model = Candidate
-        fields = ["id", "name", "email", "phone", "resume_text", "city", "experience_years", "education", "languages", "created_at"]
-        read_only_fields = ["id", "created_at"]
-
-class ApplicationCreateSerializer(serializers.Serializer):
-    # поля которые фронтэнд должен прислать при отклике
-    vacancy_id = serializers.IntegerField()
-    name = serializers.CharField(max_length=255)
-    email = serializers.EmailField()
-    phone = serializers.CharField(max_length=64, allow_blank=True, required=False)
-    resume_text = serializers.CharField(allow_blank=True, required=False)
-    city = serializers.CharField(max_length=128, allow_blank=True, required=False)
-    experience_years = serializers.FloatField(required=False)
-    education = serializers.CharField(allow_blank=True, required=False)
-    languages = serializers.ListField(child=serializers.DictField(), required=False)
-    meta = serializers.DictField(required=False)
-
-    def validate_vacancy_id(self, value):
-        try:
-            Vacancy.objects.get(pk=value)
-        except Vacancy.DoesNotExist:
-            raise serializers.ValidationError("Vacancy not found")
-        return value
+        fields = ('id', 'name', 'email', 'phone', 'resume_text', 'city',
+                  'experience_years', 'education', 'languages', 'created_at')
+        read_only_fields = ('id', 'created_at')
 
 class ApplicationSerializer(serializers.ModelSerializer):
-    candidate = CandidateSerializer(read_only=True)
+    candidate = CandidateSerializer()
+    vacancy = serializers.SerializerMethodField(read_only=True)
+    # безопасный временный queryset, заменяем в __init__
+    vacancy_id = serializers.PrimaryKeyRelatedField(
+        write_only=True, queryset=Application.objects.none(), source='vacancy'
+    )
+    status = serializers.CharField(read_only=True)
+
     class Meta:
         model = Application
-        fields = ["id", "vacancy", "candidate", "status", "created_at", "meta"]
-        read_only_fields = ["id", "created_at"]
+        fields = ('id', 'vacancy', 'vacancy_id', 'candidate', 'status', 'created_at', 'meta')
+        read_only_fields = ('id', 'created_at', 'vacancy', 'status')
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # импортируем Vacancy здесь, чтобы избежать циклических импортов
+        try:
+            from jobs.models import Vacancy
+            self.fields['vacancy_id'].queryset = Vacancy.objects.all()
+        except Exception:
+            self.fields['vacancy_id'].queryset = Application.objects.none()
+
+    def get_vacancy(self, obj):
+        if obj.vacancy_id:
+            return {
+                "id": obj.vacancy_id,
+                "title": getattr(obj.vacancy, "title", None),
+                "city": getattr(obj.vacancy, "city", None),
+            }
+        return None
+
+    def create(self, validated_data):
+        candidate_data = validated_data.pop('candidate')
+        # find or create candidate by email
+        candidate, created = Candidate.objects.get_or_create(
+            email=candidate_data.get('email'),
+            defaults=candidate_data
+        )
+        # update candidate fields if provided
+        for k, v in candidate_data.items():
+            # update only when value is not None and different
+            if v is not None and getattr(candidate, k, None) != v:
+                setattr(candidate, k, v)
+        candidate.save()
+        application = Application.objects.create(candidate=candidate, **validated_data)
+        return application
+
+class BotMessageSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = BotMessage
+        fields = ('id', 'application', 'sender', 'text', 'created_at', 'metadata')
+        read_only_fields = ('id', 'created_at')

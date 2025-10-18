@@ -1,12 +1,7 @@
-# employers/urls.py
-from django.urls import path
-from rest_framework.response import Response
-from rest_framework.decorators import api_view
+from rest_framework.routers import DefaultRouter
+from .views import EmployerViewSet
 
-@api_view(["GET"])
-def stub(request):
-    return Response({"ok": True, "app": "employers"})
+router = DefaultRouter()
+router.register(r'', EmployerViewSet, basename='employer')
 
-urlpatterns = [
-    path('', stub, name='employers-stub'),
-]
+urlpatterns = router.urls
