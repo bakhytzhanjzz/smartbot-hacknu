@@ -9,11 +9,6 @@ logger = logging.getLogger(__name__)
 
 
 class GeminiClient:
-    """
-    Production-ready wrapper for Google Gemini LLM.
-    Provides semantic evaluation between job descriptions and resumes.
-    """
-
     def __init__(self):
         api_key = os.getenv("GEMINI_API_KEY")
         if not api_key:
